@@ -1,34 +1,50 @@
 # Keep crewai at version 0.130.0
 # Other package versions are flexible and can be changed
 # Only change crewai version if there are critical dependency conflicts that cannot be resolved by other means
-click==8.1.8
-
-# Core framework
-crewai==0.130.0
-crewai-tools==0.47.1
-
-# API / server
-fastapi==0.110.3
-uvicorn[standard]
-
-# ML / data
-numpy==1.26.4
-pandas==2.2.2
-onnxruntime==1.22.0
-
-# Google / LLM access (let pip resolve compatible deps)
-google-generativeai
+crewai==0.130.0 
+# Optional: used for web-search tools. Core PDF analysis works without it.
+crewai-tools
+fastapi
+google-ai-generativelanguage
+google-api-core
 google-api-python-client
-google-cloud-storage
-google-cloud-bigquery
+google-auth
+google-auth-httplib2
 google-cloud-aiplatform
-
-# Validation / configs
-pydantic>=2.4.2
-python-dotenv
-
-# Utilities
-pillow
-jinja2
+google-cloud-bigquery
+google-cloud-core
+google-cloud-resource-manager
+google-cloud-storage
+google-crc32c
+pypdf
+google-generativeai
+google-resumable-media
+googleapis-common-protos
+Jinja2
 jsonschema
-protobuf>=4.25.3
+langchain-core
+langchain-community
+langsmith
+numpy
+oauthlib
+onnxruntime
+openai
+opentelemetry-api
+opentelemetry-exporter-otlp-proto-common
+opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-exporter-otlp-proto-http
+opentelemetry-instrumentation
+opentelemetry-instrumentation-asgi
+opentelemetry-instrumentation-fastapi
+opentelemetry-proto
+opentelemetry-sdk
+opentelemetry-semantic-conventions
+opentelemetry-util-http
+pandas
+pillow
+pip
+protobuf
+pydantic
+pydantic_core
+python-multipart
+uvicorn

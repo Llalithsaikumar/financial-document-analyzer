@@ -7,7 +7,49 @@ A comprehensive financial document analysis system that processes corporate repo
 
 ### Install Required Libraries
 ```sh
-pip install -r requirement.txt
+pip install -r requirements.txt
+```
+
+### Free model setup (default)
+This project now defaults to a free local model through Ollama.
+
+1. Install Ollama: https://ollama.com/download
+2. Pull a free model:
+```sh
+ollama pull llama3.2
+```
+3. Run Ollama server (if not already running):
+```sh
+ollama serve
+```
+4. Run the API:
+```sh
+python main.py
+```
+
+### Optional provider switch
+Use environment variables to change model/provider:
+
+```sh
+# Free local default
+$env:LLM_PROVIDER="ollama"
+$env:MODEL="ollama/llama3.2"
+
+# OpenAI (paid)
+$env:LLM_PROVIDER="openai"
+$env:OPENAI_API_KEY="your_key"
+$env:MODEL="gpt-4o-mini"
+
+# Gemini (free tier may be available)
+$env:LLM_PROVIDER="gemini"
+$env:GEMINI_API_KEY="your_key"
+$env:MODEL="gemini/gemini-1.5-flash"
+
+# AIMLAPI (free models available)
+$env:LLM_PROVIDER="aimlapi"
+$env:AIMLAPI_API_KEY="your_key"
+$env:AIMLAPI_BASE_URL="https://api.aimlapi.com/v1"
+$env:MODEL="google/gemma-3-4b-it"
 ```
 
 ### Sample Document
@@ -36,3 +78,18 @@ The system analyzes financial documents like Tesla's Q2 2025 financial update.
 - Investment recommendations
 - Risk assessment
 - Market insights
+
+## Optional Search Tool Compatibility
+Web search support is optional and does not block core PDF analysis.
+
+### Check installed versions
+```sh
+pip show crewai crewai-tools
+```
+
+### Minimal Serper import smoke test
+```sh
+python -c "from crewai_tools.tools.serper_dev_tool import SerperDevTool; print('Serper import OK')"
+```
+
+If this import fails, the API still starts and runs PDF analysis; search tool usage is disabled with a warning.

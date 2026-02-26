@@ -1,60 +1,57 @@
-## Importing libraries and files
 import os
+import re
+import logging
+from typing import List
+from typing import Any
+from typing import Optional
+
 from dotenv import load_dotenv
+from pypdf import PdfReader
+
 load_dotenv()
 
-from crewai_tools import tools
-from crewai_tools.tools.serper_dev_tool import SerperDevTool
+logger = logging.getLogger(__name__)
+_search_tool_unavailable_reason: Optional[str] = None
 
-## Creating search tool
-search_tool = SerperDevTool()
 
-## Creating custom pdf reader tool
-class FinancialDocumentTool():
-    async def read_data_tool(path='data/sample.pdf'):
-        """Tool to read data from a pdf file from a path
+def get_search_tool() -> Optional[Any]:
+    """Lazily initialize optional Serper search tool.
 
-        Args:
-            path (str, optional): Path of the pdf file. Defaults to 'data/sample.pdf'.
+    Returns:
+        Optional[Any]: Serper tool instance when available, otherwise None.
+    """
+    global _search_tool_unavailable_reason
+    try:
+        from crewai_tools.tools.serper_dev_tool import SerperDevTool
+        return SerperDevTool()
+    except (ImportError, ModuleNotFoundError) as exc:
+        reason = str(exc)
+        if _search_tool_unavailable_reason != reason:
+            logger.warning("Search tool disabled due to dependency mismatch: %s", reason)
+            _search_tool_unavailable_reason = reason
+        return None
 
-        Returns:
-            str: Full Financial Document file
-        """
-        
-        docs = Pdf(file_path=path).load()
 
-        full_report = ""
-        for data in docs:
-            # Clean and format the financial document data
-            content = data.page_content
-            
-            # Remove extra whitespaces and format properly
-            while "\n\n" in content:
-                content = content.replace("\n\n", "\n")
-                
-            full_report += content + "\n"
-            
-        return full_report
+def _clean_text(text: str) -> str:
+    text = text.replace("\r", "\n")
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text.strip()
 
-## Creating Investment Analysis Tool
-class InvestmentTool:
-    async def analyze_investment_tool(financial_document_data):
-        # Process and analyze the financial document data
-        processed_data = financial_document_data
-        
-        # Clean up the data format
-        i = 0
-        while i < len(processed_data):
-            if processed_data[i:i+2] == "  ":  # Remove double spaces
-                processed_data = processed_data[:i] + processed_data[i+1:]
-            else:
-                i += 1
-                
-        # TODO: Implement investment analysis logic here
-        return "Investment analysis functionality to be implemented"
 
-## Creating Risk Assessment Tool
-class RiskTool:
-    async def create_risk_assessment_tool(financial_document_data):        
-        # TODO: Implement risk assessment logic here
-        return "Risk assessment functionality to be implemented"
+def read_pdf_text(path: str) -> str:
+    """Read and normalize text from a PDF file."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"PDF file not found: {path}")
+
+    reader = PdfReader(path)
+    pages: List[str] = []
+    for page in reader.pages:
+        page_text = page.extract_text() or ""
+        if page_text.strip():
+            pages.append(page_text)
+
+    if not pages:
+        raise ValueError("The uploaded PDF appears to have no extractable text.")
+
+    return _clean_text("\n\n".join(pages))
