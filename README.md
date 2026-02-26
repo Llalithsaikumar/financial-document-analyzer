@@ -10,6 +10,17 @@ A comprehensive financial document analysis system that processes corporate repo
 pip install -r requirements.txt
 ```
 
+### PostgreSQL setup
+The API now stores users and analysis results in PostgreSQL.
+
+1. Create a database (example: `financial_analyzer`)
+2. Set `DATABASE_URL` in `.env`
+3. Optional manual schema init:
+```sh
+psql -U postgres -d financial_analyzer -f sql/init_postgres.sql
+```
+4. Start the API; tables are also auto-created on startup.
+
 ### Free model setup (default)
 This project now defaults to a free local model through Ollama.
 

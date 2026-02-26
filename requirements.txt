@@ -48,3 +48,5 @@ pydantic
 pydantic_core
 python-multipart
 uvicorn
+SQLAlchemy
+psycopg2-binary

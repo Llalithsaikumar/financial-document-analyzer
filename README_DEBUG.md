@@ -62,14 +62,26 @@
 - Bug: `requirement.txt` typo.
 - Fix: Corrected to `requirements.txt`.
 
+16. Database persistence for users and analyses missing
+- Bug: No relational storage for user metadata and analysis history.
+- Fix: Added PostgreSQL integration (`SQLAlchemy` + `psycopg2-binary`), startup table init, `users` and `analysis_results` models, and write path in `POST /analyze`.
+
+17. Missing API endpoints for stored records
+- Bug: No way to retrieve stored users/analyses from API.
+- Fix: Added `GET /users` and `GET /analyses` with capped pagination.
+
+18. Server URL mismatch in console output
+- Bug: Console displayed `http://0.0.0.0:8000`.
+- Fix: Changed Uvicorn host to `127.0.0.1` so local run prints `http://127.0.0.1:8000`.
+
 
 ## Setup Instructions
 
-1. Create/activate virtual environment (PowerShell):
+1. Create and activate virtual environment (PowerShell):
 ```powershell
-cd "c:\Users\User\Desktop\Project"
+cd "c:\Users\Lalith Sai Kumar\Desktop\Project\financial-document-analyzer"
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-cd .\financial-document-analyzer
 ```
 
 2. Install dependencies:
@@ -77,22 +89,31 @@ cd .\financial-document-analyzer
 pip install -r requirements.txt
 ```
 
-3. Configure `.env` (example for AIMLAPI free model):
+3. Configure `.env`:
 ```env
 LLM_PROVIDER=aimlapi
 AIMLAPI_API_KEY=your_key_here
 AIMLAPI_BASE_URL=https://api.aimlapi.com/v1
 MODEL=google/gemma-3-4b-it
-MAX_DOCUMENT_CHARS=12000
+MAX_DOCUMENT_CHARS=8000
 OUTPUT_DIR=output
+DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/financial_analyzer
 ```
 
-4. Start API:
+4. Prepare PostgreSQL:
+- Create database `financial_analyzer`.
+- Optional: run manual schema SQL:
+```powershell
+psql -U postgres -d financial_analyzer -f .\sql\init_postgres.sql
+```
+- Note: tables are also auto-created on app startup via SQLAlchemy.
+
+5. Start API:
 ```powershell
 python main.py
 ```
 
-5. Open docs:
+6. Open docs:
 - http://127.0.0.1:8000/docs
 
 
@@ -101,22 +122,38 @@ python main.py
 ### Swagger UI
 1. Open `/docs`.
 2. Select `POST /analyze`.
-3. Upload a PDF.
-4. Optionally set `query`.
+3. Upload a PDF file.
+4. Optionally set:
+- `query`
+- `user_name`
+- `user_email`
 5. Execute.
 
-### cURL Example
+### cURL Example (`POST /analyze`)
 ```bash
 curl -X POST "http://127.0.0.1:8000/analyze" \
   -H "accept: application/json" \
   -H "Content-Type: multipart/form-data" \
   -F "file=@TSLA-Q2-2025-Update.pdf;type=application/pdf" \
-  -F "query=Analyze this financial document for investment insights."
+  -F "query=Analyze this financial document for investment insights." \
+  -F "user_name=Lalith" \
+  -F "user_email=lalith@example.com"
+```
+
+### List stored users
+```bash
+curl "http://127.0.0.1:8000/users?limit=20"
+```
+
+### List stored analyses
+```bash
+curl "http://127.0.0.1:8000/analyses?limit=20"
 ```
 
 ### Output Files
 - Successful responses are saved under `output/` as JSON.
 - API response includes `saved_output_file`.
+- Analysis metadata is also stored in PostgreSQL.
 
 
 ## API Documentation
@@ -133,21 +170,59 @@ curl -X POST "http://127.0.0.1:8000/analyze" \
 ### `POST /analyze`
 - Content type: `multipart/form-data`
 - Fields:
-  - `file` (required): PDF file
-  - `query` (optional): analysis prompt
+- `file` (required): PDF file
+- `query` (optional): analysis prompt
+- `user_name` (optional): display name (default: `Anonymous`)
+- `user_email` (optional): used to upsert/find user
 
 - Success response (`200`):
 ```json
 {
   "status": "success",
   "query": "Analyze this financial document for investment insights.",
-  "analysis": "....",
+  "analysis": "...",
   "file_processed": "TSLA-Q2-2025-Update.pdf",
-  "saved_output_file": "output/analysis_YYYYMMDD_HHMMSS_xxxxxxxx.json"
+  "saved_output_file": "output/analysis_YYYYMMDD_HHMMSS_xxxxxxxx.json",
+  "user": {
+    "name": "User",
+    "email": "User@example.com"
+  },
+  "analysis_record_id": "uuid-value"
 }
 ```
 
 - Common errors:
-  - `400`: missing filename, non-PDF, or empty upload
-  - `500`: LLM/provider/runtime failure (check `error.log`)
+- `400`: missing filename, non-PDF, or empty upload
+- `500`: LLM/provider/runtime failure or database write failure (check `error.log`)
 
+### `GET /users`
+- Query param: `limit` (default 50, max 500)
+- Returns recent users.
+
+### `GET /analyses`
+- Query param: `limit` (default 50, max 500)
+- Returns recent analysis metadata.
+
+
+## Troubleshooting
+
+### PostgreSQL password authentication failed
+If you see:
+- `FATAL: password authentication failed for user "postgres"`
+
+Your app is using an incorrect password in `DATABASE_URL`.
+
+Update `.env` with the real PostgreSQL credentials:
+```env
+DATABASE_URL=postgresql+psycopg2://postgres:YOUR_REAL_PASSWORD@127.0.0.1:5432/financial_analyzer
+```
+
+Then restart:
+```powershell
+python main.py
+```
+
+Notes:
+- The API now starts even when DB connection fails (`STRICT_DB_STARTUP=false` by default).
+- In that state, analysis still works and file output is saved, but DB endpoints return `503`.
+- Set `STRICT_DB_STARTUP=true` if you want startup to fail when DB is unavailable.

@@ -4,12 +4,16 @@ import traceback
 import json
 from datetime import datetime
 from contextlib import asynccontextmanager
+from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from crewai import Crew, Process
 
 from agents import financial_analyst
+from database import AnalysisResult, User, get_db, get_db_error, init_db, is_db_available
 from task import analyze_financial_document_task
 from tools import get_search_tool, read_pdf_text
 
@@ -17,10 +21,17 @@ DEFAULT_QUERY = "Analyze this financial document for investment insights."
 MAX_DOCUMENT_CHARS = int(os.getenv("MAX_DOCUMENT_CHARS", "12000"))
 ERROR_LOG_PATH = os.getenv("ERROR_LOG_PATH", "error.log")
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "output")
+STRICT_DB_STARTUP = os.getenv("STRICT_DB_STARTUP", "false").lower() in {"1", "true", "yes", "on"}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    db_initialized = init_db()
+    if not db_initialized:
+        db_error = get_db_error() or "Unknown database initialization error."
+        print(f"Database disabled: {db_error}")
+        if STRICT_DB_STARTUP:
+            raise RuntimeError(f"Database initialization failed: {db_error}")
     # Trigger optional tool load once to surface compatibility warning early.
     get_search_tool()
     yield
@@ -95,6 +106,9 @@ async def root():
 async def analyze_document(
     file: UploadFile = File(...),
     query: str = Form(default=DEFAULT_QUERY),
+    user_name: str = Form(default="Anonymous"),
+    user_email: Optional[str] = Form(default=None),
+    db: Optional[Session] = Depends(get_db),
 ):
     file_id = str(uuid.uuid4())
     file_path = f"data/financial_document_{file_id}.pdf"
@@ -124,6 +138,45 @@ async def analyze_document(
             file_name=file.filename,
             analysis=analysis_text,
         )
+        normalized_email = (user_email or "").strip().lower() or None
+        normalized_name = (user_name or "").strip() or "Anonymous"
+        analysis_record_id = None
+        db_warning = None
+
+        if db is not None and is_db_available():
+            try:
+                user = None
+                if normalized_email:
+                    user = db.query(User).filter(User.email == normalized_email).first()
+                    if user is None:
+                        user = User(name=normalized_name, email=normalized_email)
+                        db.add(user)
+                        db.flush()
+                    elif normalized_name and user.name != normalized_name:
+                        user.name = normalized_name
+                elif normalized_name != "Anonymous":
+                    user = User(name=normalized_name, email=None)
+                    db.add(user)
+                    db.flush()
+
+                analysis_record = AnalysisResult(
+                    user_id=user.id if user else None,
+                    query=query,
+                    source_file=file.filename,
+                    analysis=analysis_text,
+                    output_file=output_file,
+                )
+                db.add(analysis_record)
+                db.commit()
+                analysis_record_id = str(analysis_record.id)
+            except SQLAlchemyError:
+                db.rollback()
+                db_warning = "Analysis completed, but database save failed. Check error.log."
+                with open(ERROR_LOG_PATH, "a", encoding="utf-8") as log_file:
+                    log_file.write(f"\n--- {uuid.uuid4()} ---\n")
+                    log_file.write(traceback.format_exc())
+        else:
+            db_warning = "Analysis completed, but database is unavailable. Check DATABASE_URL."
 
         return {
             "status": "success",
@@ -131,6 +184,12 @@ async def analyze_document(
             "analysis": analysis_text,
             "file_processed": file.filename,
             "saved_output_file": output_file,
+            "user": {
+                "name": normalized_name,
+                "email": normalized_email,
+            },
+            "analysis_record_id": analysis_record_id,
+            "db_warning": db_warning,
         }
     except HTTPException:
         raise
@@ -150,7 +209,48 @@ async def analyze_document(
                 pass
 
 
+@app.get("/users")
+async def list_users(limit: int = 50, db: Optional[Session] = Depends(get_db)):
+    if db is None or not is_db_available():
+        raise HTTPException(status_code=503, detail="Database is unavailable. Check DATABASE_URL.")
+
+    users = db.query(User).order_by(User.created_at.desc()).limit(max(1, min(limit, 500))).all()
+    return [
+        {
+            "id": str(user.id),
+            "name": user.name,
+            "email": user.email,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+        }
+        for user in users
+    ]
+
+
+@app.get("/analyses")
+async def list_analyses(limit: int = 50, db: Optional[Session] = Depends(get_db)):
+    if db is None or not is_db_available():
+        raise HTTPException(status_code=503, detail="Database is unavailable. Check DATABASE_URL.")
+
+    records = (
+        db.query(AnalysisResult)
+        .order_by(AnalysisResult.created_at.desc())
+        .limit(max(1, min(limit, 500)))
+        .all()
+    )
+    return [
+        {
+            "id": str(record.id),
+            "user_id": str(record.user_id) if record.user_id else None,
+            "query": record.query,
+            "source_file": record.source_file,
+            "output_file": record.output_file,
+            "created_at": record.created_at.isoformat() if record.created_at else None,
+        }
+        for record in records
+    ]
+
+
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run(app, host="127.0.0.1", port=8000, reload=False)
