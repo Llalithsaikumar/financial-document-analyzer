@@ -67,7 +67,7 @@
 
 1. Create/activate virtual environment (PowerShell):
 ```powershell
-cd "c:\Users\Lalith Sai Kumar\Desktop\Project"
+cd "c:\Users\User\Desktop\Project"
 .\.venv\Scripts\Activate.ps1
 cd .\financial-document-analyzer
 ```
